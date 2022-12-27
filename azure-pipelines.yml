@@ -1,0 +1,133 @@
+# PHP as Linux Web App on Azure
+# Build, package and deploy your PHP project to Azure Linux Web App.
+# Add steps that run tests and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/php
+
+
+
+variables:
+  # Azure Resource Manager connection created during pipeline creation
+  azureSubscription: "e9d17775-6668-4083-8189-45fba203e69c"
+  branch: variables['Build.SourceBranch']
+  
+  # Web app name
+  webAppName: "redefrete-backend"
+
+  # Agent VM image name
+  vmImageName: "ubuntu-latest"
+
+  # Environment name
+  ${{ if eq(variables['Build.SourceBranchName'], 'master') }}:
+    environmentName: 'redefrete-backend'
+    database: 'redefrete'
+  ${{ else }}:
+    environmentName: "redefrete-backend"
+    database: 'redefrete_dev'
+  # Root folder under which your composer.json file is available.
+  rootFolder: $(System.DefaultWorkingDirectory)
+
+stages:
+  - stage: Build
+    displayName: Build stage
+    variables:
+      phpVersion: "8.0"
+    jobs:
+      - job: BuildJob
+        pool:
+          vmImage: $(vmImageName)
+        steps:
+          - script: |
+              sudo update-alternatives --set php /usr/bin/php$(phpVersion)
+              sudo update-alternatives --set phar /usr/bin/phar$(phpVersion)
+              sudo update-alternatives --set phpdbg /usr/bin/phpdbg$(phpVersion)
+              sudo update-alternatives --set php-cgi /usr/bin/php-cgi$(phpVersion)
+              sudo update-alternatives --set phar.phar /usr/bin/phar.phar$(phpVersion)
+              sudo apt update && sudo apt install supervisor -y
+              php -version
+            workingDirectory: $(rootFolder)
+            displayName: "Use PHP version $(phpVersion)"
+
+          - script: composer install --no-interaction --prefer-dist
+            workingDirectory: $(rootFolder)
+            displayName: "Composer install"
+          - script: cp .env.example .env
+
+          - script: php artisan key:generate
+          - script: php artisan jwt:secret
+          - script: php artisan env:set APP_NAME=Redefrete
+          - script: php artisan env:set APP_DEBUG=false
+          - script: php artisan env:set APP_URL=https://client.redefrete.com.br
+          - script: php artisan env:set APP_STORAGE_PATH=/home/redefrete_storage
+          
+          - script: php artisan env:set APP_URL_PASSWORD_RESET=https://client.redefrete.com.br/minha-conta/recovery/reset-password
+          - script: php artisan env:set APP_URL_REGISTER_COMPLETE=https://client.redefrete.com.br/minha-conta/cadastro/completar-registro
+
+          - script: php artisan env:set DB_CONNECTION=mysql
+          - script: php artisan env:set DB_HOST=rf-lnx1.eastus.cloudapp.azure.com
+          - script: php artisan env:set DB_PORT=3306
+          - script: php artisan env:set DB_DATABASE=$(database)
+          - script: php artisan env:set DB_USERNAME=redefrete-dbsys
+          - script: php artisan env:set DB_PASSWORD='7&E2$CiG3k3g'
+
+          - script: php artisan env:set QUEUE_CONNECTION=database
+
+          - script: php artisan env:set MAIL_MAILER=smtp
+          - script: php artisan env:set MAIL_HOST=smtp-pulse.com
+          - script: php artisan env:set MAIL_PORT=465
+          - script: php artisan env:set MAIL_USERNAME=ti@redefrete.com.br
+          - script: php artisan env:set MAIL_PASSWORD=4qL9SLYRC2RMiFA
+          - script: php artisan env:set MAIL_ENCRYPTION=tls
+          - script: php artisan env:set MAIL_FROM_ADDRESS=contato@redefrete.com.br
+          - script: php artisan env:set MAIL_FROM_NAME="${APP_NAME}"
+
+          - script: php artisan env:set GOOGLE_DRIVE_CLIENT_ID="745633185472-t156uhed529ojv5ugb9n5t2ti0m72pfu.apps.googleusercontent.com"
+          - script: php artisan env:set GOOGLE_DRIVE_CLIENT_SECRET="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"
+          - script: php artisan env:set GOOGLE_DRIVE_REFRESH_TOKEN="1//04mawpX3UFdRuCgYIARAAGAQSNwF-L9IrR5FbAnM4KIHIbsrpxLYNBLCBDM_BqjJpRvRSfef7rfwRqmZqI7ObgGtcx5Bb8dSQhGg"
+          - script: php artisan env:set GOOGLE_DRIVE_FOLDER_ID=
+
+          - script: php artisan env:set GOOGLE_MAPS_API_KEY=AIzaSyCwJMcQoikIciQI7xj4pa_XPbZge2xuux4
+          - script: php artisan env:set GOOGLE_MAPS_API_URI=https://maps.googleapis.com/maps/api
+
+          - script: php artisan env:set GUEP_API_URL=https://scorehm.guep.com.br/rotas/api.php
+          - script: php artisan env:set GUEP_USER='Laf643edH@guep'
+          - script: php artisan env:set GUEP_PASSWORD='7T5b8@guep14'
+          - script: php artisan env:set GUEP_API_KEY=20221025144658848f10f664a61a371150c96ff5766024fcd1905ac598ebd46f
+
+          - script: php artisan env:set SHOPEE_USER=redefrete
+          - script: php artisan env:set SHOPEE_PASSWORD=RYrAVzMRs9
+          - script: php artisan env:set SHOPEE_URL=https://3pl-api-prd.shps-br-services.com
+          - script: cat .env
+          - script: php artisan storage:link
+          
+          - task: ArchiveFiles@2
+            displayName: "Archive files"
+            inputs:
+              rootFolderOrFile: "$(rootFolder)"
+              includeRootFolder: false
+              archiveType: zip
+              archiveFile: $(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip
+              replaceExistingArchive: true
+
+          - upload: $(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip
+            displayName: "Upload package"
+            artifact: drop
+
+  - stage: Deploy
+    displayName: "Deploy Web App"
+    dependsOn: Build
+    condition: succeeded()
+    jobs:
+      - deployment: DeploymentJob
+        pool:
+          vmImage: $(vmImageName)
+        environment: $(environmentName)
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: AzureWebApp@1
+                  displayName: "Deploy Azure Web App :$(environmentName)"
+                  inputs:
+                    azureSubscription: $(azureSubscription)
+                    appName: $(webAppName)
+                    package: $(Pipeline.Workspace)/drop/$(Build.BuildId).zip

@@ -1,0 +1,16 @@
+
+@url = http://api.redefrete.local/api/private
+@token = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJodHRwOi8vYXBpLnJlZGVmcmV0ZS5sb2NhbC9hcGkvcHJpdmF0ZS91c2VyL2F1dGgvbG9naW4iLCJpYXQiOjE2NjAxNzUyODksImV4cCI6MTY2MDE3ODg4OSwibmJmIjoxNjYwMTc1Mjg5LCJqdGkiOiJyQ1dzN1N5YU5DTHUwajh6Iiwic3ViIjoiMSIsInBydiI6ImI5MTI3OTk3OGYxMWFhN2JjNTY3MDQ4N2ZmZjAxZTIyODI1M2ZlNDgifQ.5aXG_23St0PYYnLewovWUrxKISnDX5As_8B9oEIwrh4'
+
+GET https://example.com/topics/1 HTTP/1.1
+
+###
+
+POST {{url}}/user/auth/login
+content-type: application/json
+
+{
+    "email": "admin@redefrete.com.br",
+    "password": "password"
+}
+
